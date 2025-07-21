@@ -21,9 +21,11 @@ struct CycleScannerConfig {
 
 struct MyCycleScanner<Content: View>: View {
     
-    @Environment var color: [Color]
+    @EnvironmentObject var colorModel: SourceModel
     
-    let pageCount: Int
+    private var pageCount: Int {
+        return colorModel.colors.count
+    }
     
     let content: (Int) -> Content
     
@@ -31,9 +33,9 @@ struct MyCycleScanner<Content: View>: View {
     
     @State private var currentIndex: Int = 0
     
-    @State private var direction: Axis.Set = .horizontal
-    
     @Binding var curStr: String
+    
+    private var direction: Axis.Set = .horizontal
     /// item 大小
     private var itemSize: CGSize = .zero
     /// item 间距
@@ -41,62 +43,71 @@ struct MyCycleScanner<Content: View>: View {
     
     @State private var timer: Timer?
     
-    init(pageCount: Int, itemSize: CGSize, itemSpacing: CGFloat, curColorStr: Binding<String>, @ViewBuilder content: @escaping (Int) -> Content) {
+    init(direction: Axis.Set = .horizontal, itemSize: CGSize, itemSpacing: CGFloat, curColorStr: Binding<String>, @ViewBuilder content: @escaping (Int) -> Content) {
         self._curStr = curColorStr
-        self.pageCount = pageCount
         self.content = content
         self.itemSize = itemSize
         self.itemSpacing = itemSpacing
+        self.direction = direction
     }
     
     var body: some View {
-        Text("itemSize: \(itemSize)").font(.system(size: 10)).frame(height: 20)
-        let _ = print("body update")
-        
-        let scrollStep = direction == .horizontal ? itemSize.width: itemSize.height
+        let _ = print("body update:\(direction.rawValue)")
+        let isHorizontal = direction == .horizontal
+        let scrollStep = isHorizontal ? itemSize.width: itemSize.height
         let totalLength = (scrollStep + itemSpacing) * CGFloat(pageCount) - itemSpacing
-        
+        let scrollH = isHorizontal ? itemSize.height: totalLength
+        let scrollW = isHorizontal ? totalLength: itemSize.width
+        let offsetAbs = (CGFloat(currentIndex) * (scrollStep + itemSpacing))
+        let offsetX = isHorizontal ? -offsetAbs: 0
+        let offsetY = isHorizontal ? 0: -offsetAbs
+        let dragX = isHorizontal ? offset: 0
+        let dragY = isHorizontal ? 0: offset
         GeometryReader() { geo in
-            if direction == .horizontal {
-                HStack(alignment: .center, spacing: itemSpacing) {
-                    ForEach(0..<pageCount, id: \.self) { index in
-                        content(index)
-                            .frame(width: itemSize.width, height: itemSize.height, alignment: .center)
-                    }
+            Group {
+                if direction == .horizontal {
+                    HStack(alignment: .center, spacing: itemSpacing) { itemBuild() }
+                } else {
+                    VStack(alignment: .center, spacing: itemSpacing) { itemBuild() }
                 }
-                .frame(width: totalLength)
-            } else {
-                VStack(alignment: .center, spacing: itemSpacing) {
-                    ForEach(0..<pageCount, id: \.self) { index in
-                        content(index)
-                            .frame(width: itemSize.width, height: itemSize.height, alignment: .center)
-                    }
-                }
-                .frame(height: totalLength)
-            }
+            }.frame(width: scrollW, height: scrollH, alignment: .center)
         }
-        .offset(x: -(CGFloat(currentIndex) * (itemSize.width + itemSpacing)))
-        .onAppear(perform: startTimer)
+        .offset(x: offsetX, y: offsetY)
+        .offset(x: dragX, y: dragY)
+        .onAppear(perform: bodyAppear)
         .onDisappear(perform: stopTimer)
-        .gesture(
+        .highPriorityGesture(
             DragGesture()
                 .onChanged { value in
                     stopTimer()
+                    offset = value.translation.width
                 }
                 .onEnded { value in
-                    let translation = value.translation
-                    let offset = direction == .horizontal ? translation.width : translation.height
-                    let itemSize = direction == .horizontal ? itemSize.width + itemSpacing : itemSize.height + itemSpacing
+                    let newIndex = Int(round(value.predictedEndTranslation.width / scrollStep))
                     
-                    // 判断滑动方向
-                    if abs(offset) > itemSize / 2 {
-                        let newIndex = offset < 0 ? min(currentIndex + 1, pageCount - 1) : max(currentIndex - 1, 0)
-                        currentIndex = newIndex
+                    withAnimation(.spring()) {
+                        // 限制索引范围
+                        currentIndex = max(0, min(currentIndex - newIndex, pageCount - 1))
+                        offset = 0
+                    } completion: {
+                        updateColorTitle()
+                        startTimer()
                     }
-                    startTimer()
                 }
         )
         
+    }
+    
+    @ViewBuilder private func itemBuild() -> some View {
+        ForEach(0..<pageCount, id: \.self) { index in
+            content(index)
+                .frame(width: itemSize.width, height: itemSize.height, alignment: .center)
+        }
+    }
+    
+    private func bodyAppear() {
+        self.updateColorTitle()
+        self.startTimer()
     }
     
     private func startTimer() {
@@ -108,13 +119,17 @@ struct MyCycleScanner<Content: View>: View {
             }
             
             print("timer invoke: \(index), pageCount:\(self.pageCount)")
-            self.curStr = "\(self.currentIndex)"
+            updateColorTitle()
         }
     }
     
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+    
+    private func updateColorTitle() {
+        curStr = "\($colorModel.colors[currentIndex].wrappedValue)"
     }
     
 }
