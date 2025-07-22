@@ -13,49 +13,65 @@ enum CycleScannerDirection: String {
 }
 
 struct CycleScannerConfig {
-    var itemSize: CGSize = CGSize(width: 30, height: 30)
+    /// item大小
+    var itemSize: CGSize = .zero
+    /// item间距
     var itemSpacing: CGFloat = 0
-    var animationDuration: Double = 0.3
-    var backgroundColor: Color = .clear
+    /// 滚动间隔
+    var interval: Double = 3
+    /// item数量
+    var itemCount: Int  = 0
+    /// 滚动方向
+    var direction: Axis.Set = .horizontal
+    
 }
 
 struct MyCycleScanner<Content: View>: View {
-    
-    @EnvironmentObject var colorModel: SourceModel
-    
-    private var pageCount: Int {
-        return colorModel.colors.count
-    }
-    
+
     let content: (Int) -> Content
     
     @State private var offset: CGFloat = 0
     
     @State private var currentIndex: Int = 0
     
-    @Binding var curStr: String
-    
-    private var direction: Axis.Set = .horizontal
-    /// item 大小
-    private var itemSize: CGSize = .zero
-    /// item 间距
-    private var itemSpacing: CGFloat = 0
+    @State private var isDragging: Bool = false
+
+    @Binding var curIndex: Int
     
     @State private var timer: Timer?
     
-    init(direction: Axis.Set = .horizontal, itemSize: CGSize, itemSpacing: CGFloat, curColorStr: Binding<String>, @ViewBuilder content: @escaping (Int) -> Content) {
-        self._curStr = curColorStr
+    private var config = CycleScannerConfig()
+    
+    init(direction: Axis.Set = .horizontal,
+         itemSize: CGSize = .zero,
+         itemSpacing: CGFloat = 0.0,
+         itemCount: Int = 0,
+         curIndex: Binding<Int> = .constant(0), @ViewBuilder content: @escaping (Int) -> Content) {
+        
+        self.config = CycleScannerConfig()
+        self._curIndex = curIndex
         self.content = content
-        self.itemSize = itemSize
-        self.itemSpacing = itemSpacing
-        self.direction = direction
+        config.direction = direction
+        config.itemSize = itemSize
+        config.itemSpacing = itemSpacing
+        config.itemCount = itemCount
+    }
+    
+    init(config: CycleScannerConfig, curIndex: Binding<Int> = .constant(0), @ViewBuilder content: @escaping (Int) -> Content) {
+        _curIndex = curIndex
+        self.config = config
+        self.content = content
     }
     
     var body: some View {
-        let _ = print("body update:\(direction.rawValue)")
+        let direction = config.direction
+        let itemSize = config.itemSize
+        let itemSpacing = config.itemSpacing
+        let itemCount = config.itemCount
+        
         let isHorizontal = direction == .horizontal
         let scrollStep = isHorizontal ? itemSize.width: itemSize.height
-        let totalLength = (scrollStep + itemSpacing) * CGFloat(pageCount) - itemSpacing
+        let totalLength = (scrollStep + itemSpacing) * CGFloat(itemCount) - itemSpacing
         let scrollH = isHorizontal ? itemSize.height: totalLength
         let scrollW = isHorizontal ? totalLength: itemSize.width
         let offsetAbs = (CGFloat(currentIndex) * (scrollStep + itemSpacing))
@@ -72,26 +88,26 @@ struct MyCycleScanner<Content: View>: View {
                 }
             }.frame(width: scrollW, height: scrollH, alignment: .center)
         }
-        .offset(x: offsetX, y: offsetY)
-        .offset(x: dragX, y: dragY)
+        .offset(x: offsetX + dragX, y: offsetY + dragY)
         .onAppear(perform: bodyAppear)
         .onDisappear(perform: stopTimer)
         .highPriorityGesture(
             DragGesture()
                 .onChanged { value in
-                    stopTimer()
-                    offset = value.translation.width
+                    isDragging = true
+                    offset = isHorizontal ? value.translation.width: value.translation.height
                 }
                 .onEnded { value in
-                    let newIndex = Int(round(value.predictedEndTranslation.width / scrollStep))
+                    let scrollOffset = isHorizontal ? value.predictedEndTranslation.width: value.predictedEndTranslation.height
+                    let newIndex = Int(round(scrollOffset / scrollStep))
                     
                     withAnimation(.spring()) {
                         // 限制索引范围
-                        currentIndex = max(0, min(currentIndex - newIndex, pageCount - 1))
+                        currentIndex = max(0, min(currentIndex - newIndex, itemCount - 1))
                         offset = 0
                     } completion: {
                         updateColorTitle()
-                        startTimer()
+                        isDragging = false
                     }
                 }
         )
@@ -99,7 +115,9 @@ struct MyCycleScanner<Content: View>: View {
     }
     
     @ViewBuilder private func itemBuild() -> some View {
-        ForEach(0..<pageCount, id: \.self) { index in
+        let itemCount = config.itemCount
+        let itemSize = config.itemSize
+        ForEach(0..<itemCount, id: \.self) { index in
             content(index)
                 .frame(width: itemSize.width, height: itemSize.height, alignment: .center)
         }
@@ -112,14 +130,14 @@ struct MyCycleScanner<Content: View>: View {
     
     private func startTimer() {
         stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) {  timer in
-            let index = (self.currentIndex + 1) % self.pageCount
+        timer = Timer.scheduledTimer(withTimeInterval: config.interval, repeats: true) {  timer in
+            guard config.itemCount > 1 && !isDragging else { return }
+            let index = (self.currentIndex + 1) % config.itemCount
             withAnimation(index == 0 ? .none : .default) {
                 self.currentIndex = index
+            } completion: {
+                self.updateColorTitle()
             }
-            
-            print("timer invoke: \(index), pageCount:\(self.pageCount)")
-            updateColorTitle()
         }
     }
     
@@ -129,7 +147,7 @@ struct MyCycleScanner<Content: View>: View {
     }
     
     private func updateColorTitle() {
-        curStr = "\($colorModel.colors[currentIndex].wrappedValue)"
+        curIndex = self.currentIndex
     }
     
 }
