@@ -8,11 +8,7 @@
 import SwiftUI
 
 
-public enum DyViewPresentMode {
-    case replace  // 覆盖（默认）
-    case stack    // 堆叠
-    case dequeue  // 队列
-}
+
 public struct DyViewAniConfig {
     public var position: CGPoint?
     public var opacity: Double = 1
@@ -37,19 +33,21 @@ public struct DynamicViewListItem {
 }
 
 public class DynamicViewManager: ObservableObject {
+    public enum PresentMode {
+        case replace  // 覆盖（默认）
+        case stack    // 堆叠
+    }
+    
     public static let globalRegion = "DynamicViewGlobalName"
     public static let shared = DynamicViewManager()
-    @Published var viewMode: [String: DyViewPresentMode] = [:]
     @Published var viewStacks: [String: [DynamicViewListItem]] = [:]
     
     
     public func present<Content: View>(_ view: Content, in region: String = globalRegion,
-                                       mode: DyViewPresentMode = .replace,
+                                       mode: PresentMode = .replace,
                                        aniConfig: DyViewAniConfig? = nil,
                                        initConfig: DyViewAniConfig? = nil) {
-        
         debugPrint("present")
-        self.viewMode = [region: mode]
         let viewItem = DynamicViewListItem(view: AnyView(view), aniConfig: DyViewAniConfig(position: initConfig?.position))
         self.viewStacks[region] = if mode == .stack {
             self.viewStacks[region] ?? [] + [viewItem]
@@ -159,7 +157,7 @@ final public class DynamicViewQueue {
     private var regionName: String = DynamicViewManager.globalRegion
     
     private var viewList: [DynamicViewQueueItem] = []
-    private var viewAxis: Axis = .horizontal
+    private var viewAxis: AxisOrth = .horizontal(0)
     private var viewOrth: Double = 0.0
     
     private var duration: Double = 3.0
@@ -168,13 +166,9 @@ final public class DynamicViewQueue {
     private var playingItem: DynamicViewQueueItem?
     private var pendingItem = DynamicViewQueueItem()
     
-    public init(duration: Double,
-                axis: Axis = .horizontal,
-                orth: Double = 0,
-                inRegion: String = DynamicViewManager.globalRegion) {
+    public init(duration: Double, axis: AxisOrth = .horizontal(0), inRegion: String = DynamicViewManager.globalRegion) {
         self.duration = duration
         self.viewAxis = axis
-        self.viewOrth = orth
         self.regionName = inRegion
     }
     
@@ -233,7 +227,7 @@ final public class DynamicViewQueue {
     
     private func generatePosition(paraCenter: Double?, axis: DynamicViewQueue.AxisOrth? = nil) -> CGPoint? {
         guard let paraCenter else { return nil }
-        let realAxis: DynamicViewQueue.AxisOrth = axis ?? (viewAxis == .horizontal ? .horizontal(viewOrth): .vertical(viewOrth))
+        let realAxis: DynamicViewQueue.AxisOrth = axis ?? viewAxis
         switch realAxis {
         case .horizontal(let orth):
             return CGPoint(x: paraCenter, y: orth)
