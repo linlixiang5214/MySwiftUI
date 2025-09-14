@@ -39,67 +39,54 @@ struct DynamicViewListItem {
     }
 }
 
-public class DynamicViewManager: ObservableObject {
+
+
+public class DynamicViewRegionControl: ObservableObject {
     public enum PresentMode {
         case replace  // 覆盖（默认）
         case stack    // 堆叠
     }
+    public static let shared = DynamicViewRegionControl()
+    @Published var viewStacks = [DynamicViewListItem]()
     
-    public static let globalRegion = "DynamicViewGlobalName"
-    public static let shared = DynamicViewManager()
-    @Published var viewStacks: [String: [DynamicViewListItem]] = [:]
-    
-    
-    public func present<Content: View>(_ view: Content, in region: String = globalRegion,
+    public func present<Content: View>(_ view: Content,
+                                       name: String = "",
                                        mode: PresentMode = .replace,
                                        configs: [DyViewAniConfig] = []) {
-        debugPrint("present")
-        let viewItem = DynamicViewListItem(view: AnyView(view), aniConfig: configs.first ?? nil)
-        viewStacks[region] = (mode == .stack) ? (viewStacks[region] ?? []) + [viewItem] : [viewItem]
-    
+        let viewItem = DynamicViewListItem(view: AnyView(view), name: name, aniConfig: configs.first ?? nil)
+        viewStacks = (mode == .stack) ? viewStacks + [viewItem] : (viewStacks.filter { item in item.name != name } + [viewItem])
         let aniConfigs = Array(configs.dropFirst())
         guard !aniConfigs.isEmpty else { return }
         Task {
-            await runAnimationConfig(in: region, configs: configs)
+            await runAnimationConfig(name: name, configs: configs)
         }
     }
     
-    public func dismiss(in region: String = globalRegion,
+    public func dismiss(name: String = "",
                         isAll: Bool = false,
-                        aniConfig: DyViewAniConfig? = nil) {
+                        config: DyViewAniConfig? = nil) {
         
-        activeViewUseAni(in: region, config: aniConfig)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + (aniConfig?.duration ?? 0)) {
-            self.debugPrint("dismiss")
-            if var stack = self.viewStacks[region], !stack.isEmpty, !isAll {
-                stack.removeLast()
-                self.viewStacks[region] = stack.isEmpty ? nil : stack
-            } else {
-                self.viewStacks.removeValue(forKey: region)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (config?.duration ?? 0)) {
+            if isAll {
+                self.viewStacks.removeAll()
+            } else if let index = self.viewStacks.lastIndex(where: { item in item.name == name }) {
+                self.viewStacks.remove(at: index)
             }
         }
-    }
-    
-    public func activeViewUseAni(in region: String, config: DyViewAniConfig? = nil) {
-        debugPrint("activeViewUseAni: count: \(viewStacks[region]?.count ?? 0), in: \(region), duration: \(config?.duration ?? -1)")
         guard let config else { return }
-        let presentCount = viewStacks[region]?.count ?? 0
-        guard var regionStack = viewStacks[region] else { return }
-        regionStack[presentCount - 1].aniConfig = config
-        withAnimation(config.animation) {
-            viewStacks[region] = regionStack
-        }
+        Task { await runAnimationConfig(name: name, configs: [config]) }
+        
     }
     
-    private func runAnimationConfig(in region: String, name: String = "", configs: [DyViewAniConfig] = []) async {
+    private func runAnimationConfig(name: String, configs: [DyViewAniConfig] = []) async {
         for config in configs {
             await MainActor.run {
-                guard var regionStack = viewStacks[region], regionStack.count > 0 else { return }
-                guard let index = regionStack.firstIndex(where: { item in item.name == name }) else { return }
-                regionStack[index].aniConfig = config
+                guard viewStacks.count > 0 else { return }
+                guard let index = viewStacks.firstIndex(where: { item in item.name == name }) else { return }
+                var newItem = viewStacks[index]
+                newItem.aniConfig = config
                 withAnimation(config.animation) {
-                    viewStacks[region] = regionStack
+                    viewStacks[index] = newItem
                 }
             }
             try? await Task.sleep(for: .seconds(config.duration))
@@ -107,20 +94,51 @@ public class DynamicViewManager: ObservableObject {
     }
     
     private func debugPrint(_ str: String) {
-        print("DynamicViewManager: \(str)")
+        print("DynamicViewRegionControl: \(str)")
+    }
+    
+    private func timeDiff() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let microseconds = now / 1000000
+        print("毫秒时间戳: \(microseconds)")
+    }
+}
+
+public class DynamicViewManager {
+    
+    public static let globalRegion = "DynamicViewControlGlobalName"
+    
+    private(set) var regionControl = [String: DynamicViewRegionControl]()
+    
+    private static let manager = DynamicViewManager()
+    
+    private func getControl(region: String) -> DynamicViewRegionControl {
+        if let control = regionControl[region] { return control }
+        let control = DynamicViewRegionControl()
+        regionControl[region] = control
+        return control
+    }
+    
+    public static func shared(in region: String = globalRegion) -> DynamicViewRegionControl {
+        manager.getControl(region: region)
     }
 }
 
 struct DynamicViewInjector: ViewModifier {
-    @ObservedObject private var injector = DynamicViewManager.shared
+    @ObservedObject var control: DynamicViewRegionControl
     
     let region: String
+    
+    init(region: String) {
+        self.region = region
+        self.control = DynamicViewManager.shared(in: region)
+    }
     
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .center) {
                 ZStack {
-                    let viewList = injector.viewStacks[region] ?? []
+                    let viewList = control.viewStacks
                     ForEach(viewList, id: \.id) { item in
                         if let position = item.aniConfig?.position {
                             item.view
@@ -173,14 +191,14 @@ struct DynamicViewQueueItem {
 
 final public class DynamicViewQueue {
     public enum AxisOrth {
-        case horizontal(Double)
-        case vertical(Double)
+        case horizontal(orth: Double)
+        case vertical(orth: Double)
     }
-    
+    private let name = UUID().uuidString
     private var regionName: String = DynamicViewManager.globalRegion
     
     private var viewList: [DynamicViewQueueItem] = []
-    private var viewAxis: AxisOrth = .horizontal(0)
+    private var viewAxis: AxisOrth = .horizontal(orth: 0)
     private var viewOrth: Double = 0.0
     
     private var duration: Double = 3.0
@@ -189,7 +207,7 @@ final public class DynamicViewQueue {
     private var playingItem: DynamicViewQueueItem?
     private var pendingItem = DynamicViewQueueItem()
     
-    public init(duration: Double, axis: AxisOrth = .horizontal(0), inRegion: String = DynamicViewManager.globalRegion) {
+    public init(duration: Double, axis: AxisOrth = .horizontal(orth: 0), inRegion: String = DynamicViewManager.globalRegion) {
         self.duration = duration
         self.viewAxis = axis
         self.regionName = inRegion
@@ -228,8 +246,9 @@ final public class DynamicViewQueue {
     private func realShow() {
         debugPrint("realShow")
         guard let item = playingItem else { return }
-        DynamicViewManager.shared.present(item.view, in: regionName, configs: [item.initConf, item.enterAni])
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] timer in
+        DynamicViewManager.shared(in: regionName).present(item.view, name: name, configs: [item.initConf, item.enterAni])
+        let fixTime = duration - item.leaveAni.duration
+        dismissTimer = Timer.scheduledTimer(withTimeInterval: fixTime > 0 ? fixTime: 0.3, repeats: false) { [weak self] timer in
             timer.invalidate()
             self?.dismiss()
         }
@@ -239,10 +258,11 @@ final public class DynamicViewQueue {
         debugPrint("dismiss")
         dismissTimer?.invalidate()
         dismissTimer = nil
-        
+        isAll ? viewList.removeAll(): ()
         guard let item = playingItem else { return }
-        DynamicViewManager.shared.dismiss(in: self.regionName, isAll: isAll, aniConfig: item.leaveAni)
-        DispatchQueue.main.asyncAfter(deadline: .now() + (item.leaveAni.duration) + 0.05) {
+        DynamicViewManager.shared(in: regionName).dismiss(name: name, isAll: isAll, config: item.leaveAni)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + item.leaveAni.duration) {
             self.playingItem = nil
             self.show()
         }
