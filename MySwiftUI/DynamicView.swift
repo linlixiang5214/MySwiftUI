@@ -7,27 +7,34 @@
 
 import SwiftUI
 
-
-
 public struct DyViewAniConfig {
-    public var position: CGPoint?
-    public var opacity: Double = 1
-    public var animation: Animation?
-    public var duration: Double = 0.0
-    public init(position: CGPoint? = nil, opacity: Double = 1.0, animation: Animation? = nil, duration: Double = 0) {
+    public private(set) var position: CGPoint?
+    public private(set) var opacity: Double = 1
+    public private(set) var animation: Animation?
+    public private(set) var duration: Double = 0.0
+    private init(position: CGPoint? = nil, opacity: Double = 1.0, animation: Animation? = nil, duration: Double = 0) {
         self.position = position
         self.duration = duration
         self.opacity = opacity
         self.animation = animation
     }
+    public static func config(position: CGPoint? = nil, animation: Animation? = .easeInOut(duration: 0.3), duration: Double = 0, opacity: Double = 1.0) -> DyViewAniConfig {
+        return DyViewAniConfig(position: position, opacity: 1.0, animation: animation, duration: duration)
+    }
+    
+    public static func center(animation: Animation? = .easeInOut(duration: 0.3), duration: Double = 0.3, opacity: Double = 1.0) -> DyViewAniConfig {
+        return DyViewAniConfig(opacity: 1.0, animation: animation, duration: duration)
+    }
 }
 
-public struct DynamicViewListItem {
-    public var id = UUID()
-    public var view: AnyView
-    public var aniConfig: DyViewAniConfig?
-    init(view: AnyView, aniConfig: DyViewAniConfig? = nil) {
+struct DynamicViewListItem {
+    var id = UUID()
+    var name: String = ""
+    var view: AnyView
+    var aniConfig: DyViewAniConfig?
+    init(view: AnyView, name: String = "", aniConfig: DyViewAniConfig? = nil) {
         self.view = view
+        self.name = name
         self.aniConfig = aniConfig
     }
 }
@@ -45,17 +52,16 @@ public class DynamicViewManager: ObservableObject {
     
     public func present<Content: View>(_ view: Content, in region: String = globalRegion,
                                        mode: PresentMode = .replace,
-                                       aniConfig: DyViewAniConfig? = nil,
-                                       initConfig: DyViewAniConfig? = nil) {
+                                       configs: [DyViewAniConfig] = []) {
         debugPrint("present")
-        let viewItem = DynamicViewListItem(view: AnyView(view), aniConfig: DyViewAniConfig(position: initConfig?.position))
-        self.viewStacks[region] = if mode == .stack {
-            self.viewStacks[region] ?? [] + [viewItem]
-        } else {
-            [viewItem]
+        let viewItem = DynamicViewListItem(view: AnyView(view), aniConfig: configs.first ?? nil)
+        viewStacks[region] = (mode == .stack) ? (viewStacks[region] ?? []) + [viewItem] : [viewItem]
+    
+        let aniConfigs = Array(configs.dropFirst())
+        guard !aniConfigs.isEmpty else { return }
+        Task {
+            await runAnimationConfig(in: region, configs: configs)
         }
-        
-        self.activeViewUseAni(in: region, config: aniConfig)
     }
     
     public func dismiss(in region: String = globalRegion,
@@ -83,6 +89,20 @@ public class DynamicViewManager: ObservableObject {
         regionStack[presentCount - 1].aniConfig = config
         withAnimation(config.animation) {
             viewStacks[region] = regionStack
+        }
+    }
+    
+    private func runAnimationConfig(in region: String, name: String = "", configs: [DyViewAniConfig] = []) async {
+        for config in configs {
+            await MainActor.run {
+                guard var regionStack = viewStacks[region], regionStack.count > 0 else { return }
+                guard let index = regionStack.firstIndex(where: { item in item.name == name }) else { return }
+                regionStack[index].aniConfig = config
+                withAnimation(config.animation) {
+                    viewStacks[region] = regionStack
+                }
+            }
+            try? await Task.sleep(for: .seconds(config.duration))
         }
     }
     
@@ -137,14 +157,17 @@ public enum DynamicViewQueueAxis {
 
 struct DynamicViewQueueItem {
     var view: AnyView?
-    var initConf: DyViewAniConfig?
-    var enterAni: DyViewAniConfig?
-    var leaveAni: DyViewAniConfig?
-    init(view: AnyView? = nil, position: CGPoint? = nil, initConf: DyViewAniConfig? = nil, enterAni: DyViewAniConfig? = nil, leaveAni: DyViewAniConfig? = nil) {
+    var initConf: DyViewAniConfig
+    var enterAni: DyViewAniConfig
+    var leaveAni: DyViewAniConfig
+    init(view: AnyView? = nil,
+         initConf: DyViewAniConfig? = nil,
+         enterAni: DyViewAniConfig? = nil,
+         leaveAni: DyViewAniConfig? = nil) {
         self.view = view
-        self.initConf = initConf
-        self.enterAni = enterAni
-        self.leaveAni = leaveAni
+        self.initConf = initConf ?? .center()
+        self.enterAni = enterAni ?? .center()
+        self.leaveAni = leaveAni ?? .center()
     }
 }
 
@@ -174,21 +197,21 @@ final public class DynamicViewQueue {
     
     public func pushView(_ view: AnyView, initCenter: Double) -> DynamicViewQueue {
         let pos = generatePosition(paraCenter: initCenter)
-        let config = DyViewAniConfig(position: pos)
+        let config = DyViewAniConfig.config(position: pos)
         pendingItem = DynamicViewQueueItem(view: view, initConf: config, enterAni: nil, leaveAni: nil)
         return self
     }
     
     public func enter(_ paraCenter: Double, axis: AxisOrth? = nil, animation: Animation = .easeInOut(duration: 0.3), duration: Double = 0.3) -> DynamicViewQueue {
         let pos = generatePosition(paraCenter: paraCenter, axis: axis)
-        let config = DyViewAniConfig(position: pos, animation: animation, duration: duration)
+        let config = DyViewAniConfig.config(position: pos, animation: animation, duration: duration)
         pendingItem.enterAni = config
         return self
     }
     
     public func leave(_ paraCenter: Double, axis: AxisOrth? = nil, animation: Animation = .easeInOut(duration: 0.3), duration: Double = 0.3) -> DynamicViewQueue {
         let pos = generatePosition(paraCenter: paraCenter, axis: axis)
-        let toConfig = DyViewAniConfig(position: pos, animation: animation, duration: duration)
+        let toConfig = DyViewAniConfig.config(position: pos, animation: animation, duration: duration)
         pendingItem.leaveAni = toConfig
         viewList.append(pendingItem)
         pendingItem = DynamicViewQueueItem()
@@ -205,7 +228,7 @@ final public class DynamicViewQueue {
     private func realShow() {
         debugPrint("realShow")
         guard let item = playingItem else { return }
-        DynamicViewManager.shared.present(item.view, in: regionName, aniConfig: item.enterAni, initConfig: item.initConf)
+        DynamicViewManager.shared.present(item.view, in: regionName, configs: [item.initConf, item.enterAni])
         dismissTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] timer in
             timer.invalidate()
             self?.dismiss()
@@ -219,7 +242,7 @@ final public class DynamicViewQueue {
         
         guard let item = playingItem else { return }
         DynamicViewManager.shared.dismiss(in: self.regionName, isAll: isAll, aniConfig: item.leaveAni)
-        DispatchQueue.main.asyncAfter(deadline: .now() + (item.leaveAni?.duration ?? 0) + 0.05) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (item.leaveAni.duration) + 0.05) {
             self.playingItem = nil
             self.show()
         }

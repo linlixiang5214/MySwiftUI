@@ -93,7 +93,7 @@ struct ContentView: View {
 
 public class testModel {
     
-    let animation = DynamicViewQueue(duration: 12, axis: .horizontal, orth: 250, inRegion: testRegionName)
+    let animation = DynamicViewQueue(duration: 6, axis: .horizontal(300), inRegion: testRegionName)
     
     private let width = UIScreen.main.bounds.width
     
