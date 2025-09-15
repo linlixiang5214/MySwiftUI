@@ -99,7 +99,7 @@ struct ContentView: View {
 
 public class testModel {
     
-    let animation = DynamicViewQueue(duration: 0.6, axis: .horizontal(orth: 300), inRegion: testRegionName)
+    let animation = DynamicViewQueue(duration: 4, axis: .horizontal(orth: 250), inRegion: testRegionName)
     
     private let width = UIScreen.main.bounds.width
     
@@ -111,9 +111,9 @@ public class testModel {
     
     func start() {
         self.testFunc()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
-            self.testFunc()
-        }
+//        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
+//            self.testFunc()
+//        }
     }
     
     func testFunc() {
@@ -124,25 +124,35 @@ public class testModel {
         let contentHeight = 500.0
         let testHeight = 30.0
         
-        animation
-            .pushView(AnyView(TestView(count: count)), initCenter: width)
-            .enter(width / 2)
-            .leave(-testHeight, axis: .vertical(orth: width / 2))
-            .show()
+//        animation
+//            .pushView(AnyView(TestView(count: count)), width)
+//            .reach(width / 2)
+//            .reach(-testHeight, axis: .vertical(orth: width / 2))
+//            .finish()
+//            .show()
         
-        animation
-            .pushView(AnyView(TestView(count: count)), initCenter: width)
-            .enter(width / 2)
-            .leave(-width / 2)
-            .show()
-        
-        animation
-            .pushView(AnyView(TestView(count: count)), initCenter: width)
-            .enter(width / 2)
-            .leave(contentHeight + testHeight, axis: .vertical(orth: width / 2))
-            .show()
+//        animation
+//            .pushView(AnyView(TestView(count: count)), initCenter: width)
+//            .enter(width / 2)
+//            .leave(-width / 2)
+//            .show()
+//        
+//        animation
+//            .pushView(AnyView(TestView(count: count)), initCenter: width)
+//            .enter(width / 2)
+//            .leave(contentHeight + testHeight, axis: .vertical(orth: width / 2))
+//            .show()
         
             
+        animation
+            .pushView(AnyView(TestView(count: count)), width)
+            .reach(width / 2)
+            .reach(contentHeight / 3, axis: .vertical(orth: width / 2))
+            .reach((2 * contentHeight) / 3, axis: .vertical(orth: width / 2))
+            .reach(contentHeight / 2, axis: .vertical(orth: width / 2))
+            .reach(-width)
+            .finish()
+            .show()
     }
     
     func dismiss() {
