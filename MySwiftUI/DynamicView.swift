@@ -39,8 +39,6 @@ struct DynamicViewListItem {
     }
 }
 
-
-
 public class DynamicViewRegionControl: ObservableObject {
     public enum PresentMode {
         case replace  // 覆盖（默认）
@@ -49,6 +47,10 @@ public class DynamicViewRegionControl: ObservableObject {
     public static let shared = DynamicViewRegionControl()
     @Published var viewStacks = [DynamicViewListItem]()
     public var isActive: Bool = true
+    
+    /// name：一个region 可能有多个 view，可以用name进行命名
+    /// mode：替换 堆叠
+    /// config:  动画效果，有动画的话最少要有两个元素（初始config，结束config）
     public func present<Content: View>(_ view: Content,
                                        name: String = "",
                                        mode: PresentMode = .replace,
@@ -62,10 +64,8 @@ public class DynamicViewRegionControl: ObservableObject {
         }
     }
     
-    public func dismiss(name: String = "",
-                        isAll: Bool = false,
-                        config: DyViewAniConfig? = nil) {
-        
+    /// 移除name下最后一个视图
+    public func dismiss(name: String = "", isAll: Bool = false, config: DyViewAniConfig? = nil) {
         DispatchQueue.main.asyncAfter(deadline: .now() + (config?.duration ?? 0)) {
             if isAll {
                 self.viewStacks.removeAll()
@@ -78,6 +78,7 @@ public class DynamicViewRegionControl: ObservableObject {
         
     }
     
+    /// 遍历执行动画配置
     private func runAnimationConfig(name: String, configs: [DyViewAniConfig] = []) async {
         for config in configs {
             await MainActor.run {
@@ -151,21 +152,23 @@ struct DynamicViewInjector: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .center) {
-                ZStack {
-                    let viewList = control.viewStacks
-                    ForEach(viewList, id: \.id) { item in
-                        if let position = item.aniConfig?.position {
+                GeometryReader { contentProxy in
+                    ZStack {
+                        let viewList = control.viewStacks
+                        ForEach(viewList, id: \.id) { item in
                             item.view
                                 .opacity(item.aniConfig?.opacity ?? 1)
-                                .position(position)
-                        } else {
-                            item.view
-                                .opacity(item.aniConfig?.opacity ?? 1)
+                                .position(item.aniConfig?.position ?? CGPoint(x: contentProxy.size.width / 2, y: contentProxy.size.height / 2))
                         }
                     }
                 }
-                .onAppear { DynamicViewManager.activeSign(in: region, control) }
-                .onDisappear { DynamicViewManager.cleanSign(in: region) }
+                .ignoresSafeArea()
+                .onAppear {
+                    DynamicViewManager.activeSign(in: region, control)
+                }
+                .onDisappear {
+                    DynamicViewManager.cleanSign(in: region)
+                }
             }
     }
 }
@@ -228,21 +231,21 @@ final public class DynamicViewQueue {
         self.viewAxis = axis
         self.regionName = inRegion
     }
-    
-    public func pushView(_ view: AnyView, initCenter: Double) -> DynamicViewQueue {
+    /// 开始配置，默认居中，父视图frame固定，不然position会不可控
+    public func pushView(_ view: AnyView, initCenter: Double? = nil) -> DynamicViewQueue {
         let pos = generatePosition(paraCenter: initCenter)
         let config = DyViewAniConfig.config(position: pos)
         pendingItem = DynamicViewQueueItem(view: view, initConf: config, enterAni: nil, leaveAni: nil)
         return self
     }
-    
+    /// 视图中心点 沿着axis方向的 绝对位置，axis 默认 init 可设置，orth 为正交方向偏移
     public func enter(_ paraCenter: Double, axis: AxisOrth? = nil, animation: Animation = .easeInOut(duration: 0.3), duration: Double = 0.3) -> DynamicViewQueue {
         let pos = generatePosition(paraCenter: paraCenter, axis: axis)
         let config = DyViewAniConfig.config(position: pos, animation: animation, duration: duration)
         pendingItem.enterAni = config
         return self
     }
-    
+    /// 加到队列中，相当于配置完成，参数与enter一样
     public func leave(_ paraCenter: Double, axis: AxisOrth? = nil, animation: Animation = .easeInOut(duration: 0.3), duration: Double = 0.3) -> DynamicViewQueue {
         let pos = generatePosition(paraCenter: paraCenter, axis: axis)
         let toConfig = DyViewAniConfig.config(position: pos, animation: animation, duration: duration)
