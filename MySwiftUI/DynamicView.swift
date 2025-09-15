@@ -90,7 +90,7 @@ public class DynamicViewRegionControl: ObservableObject {
                     viewStacks[index] = newItem
                 }
             }
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(config.duration))
         }
     }
 }

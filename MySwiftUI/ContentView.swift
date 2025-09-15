@@ -111,9 +111,9 @@ public class testModel {
     
     func start() {
         self.testFunc()
-//        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
-//            self.testFunc()
-//        }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
+            self.testFunc()
+        }
     }
     
     func testFunc() {
