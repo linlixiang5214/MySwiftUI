@@ -48,7 +48,7 @@ public class DynamicViewRegionControl: ObservableObject {
     }
     public static let shared = DynamicViewRegionControl()
     @Published var viewStacks = [DynamicViewListItem]()
-    
+    public var isActive: Bool = true
     public func present<Content: View>(_ view: Content,
                                        name: String = "",
                                        mode: PresentMode = .replace,
@@ -73,7 +73,7 @@ public class DynamicViewRegionControl: ObservableObject {
                 self.viewStacks.remove(at: index)
             }
         }
-        guard let config else { return }
+        guard let config, !isAll else { return }
         Task { await runAnimationConfig(name: name, configs: [config]) }
         
     }
@@ -116,11 +116,25 @@ public class DynamicViewManager {
         if let control = regionControl[region] { return control }
         let control = DynamicViewRegionControl()
         regionControl[region] = control
+        if regionControl.count > 30 {
+            regionControl = regionControl.filter { (region, control) -> Bool in return control.isActive == true }
+        }
         return control
     }
     
     public static func shared(in region: String = globalRegion) -> DynamicViewRegionControl {
         manager.getControl(region: region)
+    }
+    
+    public static func activeSign(in region: String = globalRegion, _ control: DynamicViewRegionControl) {
+        manager.getControl(region: region).isActive = true
+        if manager.regionControl[region] == nil {
+            manager.regionControl[region] = control
+        }
+    }
+    
+    public static func cleanSign(in region: String = globalRegion) {
+        manager.getControl(region: region).isActive = false
     }
 }
 
@@ -150,6 +164,8 @@ struct DynamicViewInjector: ViewModifier {
                         }
                     }
                 }
+                .onAppear { DynamicViewManager.activeSign(in: region, control) }
+                .onDisappear { DynamicViewManager.cleanSign(in: region) }
             }
     }
 }
