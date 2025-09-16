@@ -7,9 +7,13 @@ struct TestView: View {
     
     let count: Int
     
+    var bgColor: Color = .orange
+    
+    var flag: String = ""
+    
     var body: some View {
         VStack {
-            Text("来到广州就是靓仔 - \(count)")
+            Text("\(flag.isEmpty ? "来到广州就是靓仔": flag)  index: \(count)")
                 .font(.system(size: 16))
                 .foregroundStyle(.pink.opacity(0.5))
             
@@ -20,7 +24,7 @@ struct TestView: View {
                 .foregroundStyle(.red)
         }
         .frame(width: 260, height: 60)
-        .background(.orange.opacity(0.3))
+        .background(bgColor.opacity(0.3))
         .clipShape(.capsule)
     }
 }

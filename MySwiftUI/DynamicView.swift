@@ -21,9 +21,8 @@ public struct DyViewAniConfig {
         self.animation = animation
     }
     public static func config(position: CGPoint? = nil, animation: Animation? = .easeInOut(duration: 0.3), duration: Double = 0.3, opacity: Double = 1.0, scale: Double = 1.0) -> DyViewAniConfig {
-        return DyViewAniConfig(position: position, opacity: 1.0, scale: scale, animation: animation, duration: duration)
+        return DyViewAniConfig(position: position, opacity: opacity, scale: scale, animation: animation, duration: duration)
     }
-    
     public static func center(animation: Animation? = .easeInOut(duration: 0.3), duration: Double = 0.3, opacity: Double = 1.0, scale: Double = 1.0) -> DyViewAniConfig {
         return DyViewAniConfig(opacity: 1.0, scale: scale, animation: animation, duration: duration)
     }
@@ -244,5 +243,24 @@ final public class DynamicViewQueue {
         case .vertical(let orth):
             return CGPoint(x: orth, y: paraCenter)
         }
+    }
+}
+
+public extension DynamicViewQueue {
+    func lineOut(_ theView: some View, offset: CGFloat? = nil, isReverse: Bool = false) {
+        let axisLen: CGFloat = {
+            switch viewAxis {
+            case .horizontal: return UIScreen.main.bounds.width
+            case .vertical: return UIScreen.main.bounds.height
+            }
+        }()
+        
+        let axisOffset = offset ?? (axisLen / 2)
+        let (startPos, endPos) = isReverse ? (axisLen + axisOffset, -axisOffset): (-axisOffset, axisLen + axisOffset)
+        pushView(AnyView(theView), startPos)
+            .reach(axisLen / 2)
+            .reach(endPos)
+            .finish()
+            .show()
     }
 }
