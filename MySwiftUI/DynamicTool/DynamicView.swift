@@ -33,6 +33,30 @@ public struct DyViewAniConfig {
     }
 }
 
+public class DynamicViewManager {
+    public static let globalRegion = "DynamicViewControlGlobalName"
+    
+    private(set) var regionControl = [String: DynamicViewRegionControl]()
+    
+    private static let manager = DynamicViewManager()
+    
+    private func getControl(region: String) -> DynamicViewRegionControl {
+        if let control = regionControl[region] { return control }
+        let control = DynamicViewRegionControl()
+        regionControl[region] = control
+        return control
+    }
+    
+    public static func shared(in region: String = globalRegion) -> DynamicViewRegionControl {
+        manager.getControl(region: region)
+    }
+    
+    public static func activeSign(in region: String = globalRegion, _ control: DynamicViewRegionControl?) {
+        if manager.regionControl[region] != nil && control != nil { return }
+        manager.regionControl[region] = control
+    }
+}
+
 struct DynamicViewListItem {
     var id = UUID()
     var name: String = ""
@@ -51,7 +75,9 @@ public class DynamicViewRegionControl: ObservableObject {
         case stack    // 堆叠
     }
     
-    @Published var viewStacks = [DynamicViewListItem]()
+    @Published private(set) var viewStacks = [DynamicViewListItem]()
+    /// manager.shared可以直接使用，自行创建不归入 manager 管理（可手动activeSign加入管理)
+    public init() { }
     /// name：一个region 可能有多个 view，可以用name进行命名
     /// mode：替换 堆叠
     /// config:  动画效果，有动画的话最少要有两个元素（初始config，结束config）
@@ -94,30 +120,6 @@ public class DynamicViewRegionControl: ObservableObject {
     }
 }
 
-public class DynamicViewManager {
-    public static let globalRegion = "DynamicViewControlGlobalName"
-    
-    private(set) var regionControl = [String: DynamicViewRegionControl]()
-    
-    private static let manager = DynamicViewManager()
-    
-    private func getControl(region: String) -> DynamicViewRegionControl {
-        if let control = regionControl[region] { return control }
-        let control = DynamicViewRegionControl()
-        regionControl[region] = control
-        return control
-    }
-    
-    public static func shared(in region: String = globalRegion) -> DynamicViewRegionControl {
-        manager.getControl(region: region)
-    }
-    
-    public static func activeSign(in region: String = globalRegion, _ control: DynamicViewRegionControl?) {
-        if manager.regionControl[region] != nil && control != nil { return }
-        manager.regionControl[region] = control
-    }
-}
-
 struct DynamicViewInjector: ViewModifier {
     @ObservedObject var control: DynamicViewRegionControl
     
@@ -156,111 +158,5 @@ struct DynamicViewInjector: ViewModifier {
 public extension View {
     func enableDynamicViewInjection(in region: String = DynamicViewManager.globalRegion) -> some View {
         self.modifier(DynamicViewInjector(region: region))
-    }
-}
-
-final public class DynamicViewQueue {
-    struct DynamicViewQueueItem {
-        var view: AnyView?
-        var configs: [DyViewAniConfig] = []
-        init(view: AnyView? = nil, initConfig: DyViewAniConfig = .center()) {
-            self.view = view
-            configs.insert(initConfig, at: 0)
-        }
-    }
-    
-    public enum AxisOrth {
-        case horizontal(orth: Double)
-        case vertical(orth: Double)
-    }
-    
-    private let name = UUID().uuidString
-    private let regionName: String
-    
-    private var viewList: [DynamicViewQueueItem] = []
-    private var viewAxis: AxisOrth = .horizontal(orth: 0)
-    
-    private var duration: Double = 3.0
-    private var dismissTimer: Timer?
-    
-    private var playingItem: DynamicViewQueueItem?
-    private var pendingItem: DynamicViewQueueItem?
-    
-    public init(duration: Double, axis: AxisOrth = .horizontal(orth: 0), inRegion: String = DynamicViewManager.globalRegion) {
-        self.duration = duration
-        self.viewAxis = axis
-        self.regionName = inRegion
-    }
-    /// 开始配置，默认居中，父视图frame固定，不然position会不可控
-    public func pushView(_ view: AnyView, _ paraCenter: Double?, axis: AxisOrth? = nil, config: DyViewAniConfig? = nil) -> DynamicViewQueue {
-        let pos = generatePosition(paraCenter: paraCenter, axis: axis)
-        pendingItem = DynamicViewQueueItem(view: view, initConfig: config?.withPos(pos) ?? .config(position: pos))
-        return self
-    }
-    /// 视图中心点 沿着axis方向的 绝对位置，axis 默认 init 可设置，orth 为正交方向偏移
-    public func reach(_ paraCenter: Double?, axis: AxisOrth? = nil, config: DyViewAniConfig? = nil) -> DynamicViewQueue {
-        let pos = generatePosition(paraCenter: paraCenter, axis: axis)
-        pendingItem?.configs.append(config?.withPos(pos) ?? .config(position: pos))
-        return self
-    }
-    /// 加到队列中，相当于配置完成，参数与enter一样
-    public func finish() -> DynamicViewQueue {
-        if let pendingItem { viewList.append(pendingItem) }
-        pendingItem = nil
-        return self
-    }
-    
-    public func show() {
-        guard playingItem == nil, viewList.count > 0 else { return }
-        playingItem = viewList.removeFirst()
-        guard let item = playingItem else { return }
-        DynamicViewManager.shared(in: regionName).present(item.view, name: name, configs: Array(item.configs.dropLast()))
-        let fixTime = duration - (item.configs.last?.duration ?? 0)
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: fixTime > 0 ? fixTime: 0.3, repeats: false) { [weak self] timer in
-            timer.invalidate()
-            self?.dismiss()
-        }
-    }
-    
-    public func dismiss(isAll: Bool = false, withAni: Bool = true) {
-        dismissTimer?.invalidate()
-        dismissTimer = nil
-        isAll ? viewList.removeAll(): ()
-        guard let item = playingItem else { return }
-        DynamicViewManager.shared(in: regionName).dismiss(name: name, isAll: isAll, config: item.configs.last)
-        DispatchQueue.main.asyncAfter(deadline: .now() + (item.configs.last?.duration ?? 0.0)) {
-            self.playingItem = nil
-            self.show()
-        }
-    }
-    
-    private func generatePosition(paraCenter: Double?, axis: DynamicViewQueue.AxisOrth? = nil) -> CGPoint? {
-        guard let paraCenter else { return nil }
-        let realAxis: DynamicViewQueue.AxisOrth = axis ?? viewAxis
-        switch realAxis {
-        case .horizontal(let orth):
-            return CGPoint(x: paraCenter, y: orth)
-        case .vertical(let orth):
-            return CGPoint(x: orth, y: paraCenter)
-        }
-    }
-}
-
-public extension DynamicViewQueue {
-    func lineOut(_ theView: some View, offset: CGFloat? = nil, isReverse: Bool = false) {
-        let axisLen: CGFloat = {
-            switch viewAxis {
-            case .horizontal: return UIScreen.main.bounds.width
-            case .vertical: return UIScreen.main.bounds.height
-            }
-        }()
-        
-        let axisOffset = offset ?? (axisLen / 2)
-        let (startPos, endPos) = isReverse ? (axisLen + axisOffset, -axisOffset): (-axisOffset, axisLen + axisOffset)
-        pushView(AnyView(theView), startPos)
-            .reach(axisLen / 2)
-            .reach(endPos)
-            .finish()
-            .show()
     }
 }

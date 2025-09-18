@@ -11,7 +11,7 @@ public let testRegionName = "mainView"
 
 struct ContentView: View {
     
-    @StateObject private var model = testModel()
+    @StateObject private var model = FunctionModel()
     
     @State private var curIndex: Int = 0
     
@@ -21,7 +21,7 @@ struct ContentView: View {
             
             VStack {
                 Spacer().frame(height: 30)
-                Text("画布")
+                Text("当前 region: \(testRegionName) (同一视图可有多个)")
                     .foregroundStyle(.orange.opacity(0.6))
                 Spacer()
                 HStack() {
@@ -121,7 +121,7 @@ struct ContentView: View {
     
 }
 
-public class testModel: ObservableObject {
+public class FunctionModel: ObservableObject {
     
     let animation = DynamicViewQueue(duration: 3, axis: .horizontal(orth: 250), inRegion: testRegionName)
     
@@ -160,7 +160,7 @@ public class testModel: ObservableObject {
     
     func addView() {
         if presentMode == .stack {
-            var bgColor: Color = if nameSpace == "name-1" { .blue }
+            let bgColor: Color = if nameSpace == "name-1" { .blue }
             else if nameSpace == "name-2" { .green }
             else if nameSpace == "name-3" { .purple }
             else { .orange }
@@ -171,12 +171,11 @@ public class testModel: ObservableObject {
             
             stackPosition = CGPoint(x: stackPosition.x + 7 > 260 ? 100: stackPosition.x + 7,
                                       y: stackPosition.y + 17 > 317 ? 100: stackPosition.y + 17)
-            
-            codeStr = "DynamicViewManager.shared(in: testRegionName).present(view, name: viewName, mode: .stack, configs: configs)"
         } else {
             addCustomView()
-            codeStr = "DynamicViewManager.shared(in: testRegionName).present(view, name: viewName, mode: .replace, configs: configs)"
         }
+        
+        codeStr = "DynamicViewManager.shared(in: testRegionName).present(view, name: \(nameSpace), mode: .\(presentMode), configs: configs)"
     }
 
     func dimissView() {
@@ -194,8 +193,7 @@ public class testModel: ObservableObject {
     
     
     func startTimer() {
-        nameSpace = "Queue私有专属"
-        codeStr = "animation.lineOut(TestView(count: count), offset: 260, isReverse: true)"
+        codeStr = "每个Queue有专属命名空间\n animation.lineOut(TestView(count: count), offset: 260, isReverse: true or false)"
         linePresentInvoke()
         timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] timer in
             self?.linePresentInvoke()
