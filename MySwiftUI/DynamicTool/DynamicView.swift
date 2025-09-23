@@ -7,6 +7,18 @@
 
 import SwiftUI
 
+/* using in model: manager and control are class type
+params: 目标视图，命名空间(可不填)，同一命名空间覆盖或是堆叠(默认replace)，出场动画(可不填，Queue动画基于该能力实现)
+DynamicViewManager.shared(in: regionName).present(activeView, name: nameSpace, mode: .stack,
+ configs: [.config(animation: .easeIn(duration: 0.2), opacity: 0.2, scale: 0.8)])
+DynamicViewManager.shared(in: regionName).dismiss(name: nameSpace)
+
+ simple eg:
+ let control = DynamicViewManager.shared(in: regionName)
+ control.present(activeView)
+ control.dismiss(activeView)
+*/
+
 public struct DyViewAniConfig {
     public private(set) var position: CGPoint?
     public private(set) var opacity: Double = 1
@@ -91,7 +103,7 @@ public class DynamicViewRegionControl: ObservableObject {
         guard !aniConfigs.isEmpty else { return }
         Task { await runAnimationConfig(name: name, configs: aniConfigs) }
     }
-    /// 移除name下最后一个视图
+    /// 移除name下最后一个视图，可附加一个动画
     public func dismiss(name: String = "", isAll: Bool = false, config: DyViewAniConfig? = nil) {
         DispatchQueue.main.asyncAfter(deadline: .now() + (config?.duration ?? 0)) {
             if isAll {
