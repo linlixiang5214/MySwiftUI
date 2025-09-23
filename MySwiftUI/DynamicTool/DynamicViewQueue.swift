@@ -5,7 +5,7 @@
 //  Created by linlixiang on 2025/9/18.
 //
 
-import Foundation
+import SwiftUI
 
 final public class DynamicViewQueue {
     struct DynamicViewQueueItem {
@@ -63,8 +63,8 @@ final public class DynamicViewQueue {
     
     public func show() {
         guard playingItem == nil, viewList.count > 0 else { return }
-        guard let item = viewList.removeFirst() else { return }
-        playingItem = item
+        playingItem = viewList.removeFirst()
+        guard let item = playingItem else { return }
         
         DynamicViewManager.shared(in: regionName).present(item.view, name: name, configs: Array(item.configs.dropLast()))
         if duration >= 0 {
@@ -101,7 +101,7 @@ final public class DynamicViewQueue {
     }
 }
 
-enum DynamicViewQueuePriority: Int {
+public enum DynamicViewQueuePriority: Int {
     case lowest     = 0
     case low        = 1
     case middle     = 2
