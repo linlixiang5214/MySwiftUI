@@ -67,7 +67,7 @@ final public class DynamicViewQueue {
         guard let item = playingItem else { return }
         
         DynamicViewManager.shared(in: regionName).present(item.view, name: name, configs: Array(item.configs.dropLast()))
-        if duration >= 0 {
+        if duration > 0 {
             var fixTime = duration - (item.configs.last?.duration ?? 0)
             fixTime = fixTime > 0 ? fixTime: 0.05
             dismissTimer = Timer.scheduledTimer(withTimeInterval: fixTime, repeats: false) { [weak self] timer in
