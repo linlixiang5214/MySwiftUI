@@ -115,7 +115,7 @@ public class DynamicViewRegionControl: ObservableObject {
                     viewStacks[index] = newItem
                 }
             }
-            try? await Task.sleep(for: .seconds(config.duration))
+            try? await Task.sleep(nanoseconds: UInt64(config.duration * 1_000_000_000))
         }
     }
 }
